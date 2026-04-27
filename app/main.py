@@ -71,8 +71,6 @@ app.include_router(notif_router,  prefix="/api")
 app.include_router(admin_router,  prefix="/api")
 
 # FIX: Added prefix="/api" to match your frontend requests
-app.include_router(chat.router,   prefix="/api")
-
-@app.get("/health", tags=["health"])
+@app.get("/api/health", tags=["health"])
 async def health():
     return {"status": "ok", "service": "CivicImpact API", "version": "3.0.0"}
