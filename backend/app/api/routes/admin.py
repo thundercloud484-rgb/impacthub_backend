@@ -1,5 +1,6 @@
 # app/api/routes/admin.py
 from typing import Optional
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, EmailStr
 from beanie import PydanticObjectId
@@ -8,6 +9,7 @@ from app.models.user import User
 from app.models.post import Post
 from app.models.event import Event
 from app.core.security import get_admin_user, create_access_token
+from app.core.database import get_database
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -18,6 +20,14 @@ class AdminLoginBody(BaseModel):
 
 class ResetPasswordBody(BaseModel):
     new_password: str
+
+
+class GroupBulkDeleteBody(BaseModel):
+    group_ids: list[str]
+
+
+class UserBulkDeleteBody(BaseModel):
+    user_ids: list[str]
 
 
 def user_dict(u: User) -> dict:
@@ -106,8 +116,22 @@ async def get_all_users(
             )
         ).count()
     elif role:
-        users = await User.find(User.role == role).skip(skip).limit(limit).to_list()
-        total = await User.find(User.role == role).count()
+        if role == "authority":
+            users = await User.find(
+                Or(User.role == role, User.category == "Authority")
+            ).skip(skip).limit(limit).to_list()
+            total = await User.find(
+                Or(User.role == role, User.category == "Authority")
+            ).count()
+        else:
+            users = await User.find(
+                User.role == role,
+                User.category != "Authority",
+            ).skip(skip).limit(limit).to_list()
+            total = await User.find(
+                User.role == role,
+                User.category != "Authority",
+            ).count()
     else:
         users = await User.find_all().skip(skip).limit(limit).to_list()
         total = await User.count()
@@ -189,24 +213,80 @@ async def reset_user_password(
     }
 
 
+async def delete_user_data(database, user: User) -> None:
+    user_id = str(user.id)
+    user_object_id = user.id
+    await Post.find(Post.author_id == user_object_id).delete()
+    await Event.find(Event.organizer_id == user_object_id).delete()
+    await database.follows.delete_many({
+        "$or": [{"follower_id": user_id}, {"following_id": user_id},
+                {"follower_id": user_object_id}, {"following_id": user_object_id}]
+    })
+    await database.likes.delete_many({
+        "$or": [{"user_id": user_id}, {"user_id": user_object_id}]
+    })
+    await database.comments.delete_many({
+        "$or": [{"author_id": user_id}, {"author_id": user_object_id},
+                {"user_id": user_id}, {"user_id": user_object_id}]
+    })
+    await database.notifications.delete_many({
+        "$or": [{"user_id": user_id}, {"user_id": user_object_id},
+                {"sender_id": user_id}, {"sender_id": user_object_id}]
+    })
+    await database.group_members.delete_many({
+        "$or": [{"user_id": user_id}, {"user_id": user_object_id}]
+    })
+    await database.group_messages.delete_many({
+        "$or": [{"sender_id": user_id}, {"sender_id": user_object_id}]
+    })
+    await user.delete()
+
+
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: str,
     admin: User = Depends(get_admin_user)
 ):
-    """Delete a user (soft delete by deactivating)"""
+    """Permanently delete a user and their directly owned content."""
+    if not PydanticObjectId.is_valid(user_id):
+        raise HTTPException(404, "User not found")
     user = await User.get(PydanticObjectId(user_id))
     if not user:
         raise HTTPException(404, "User not found")
     
     if user.role == "admin":
         raise HTTPException(403, "Cannot delete admin users")
-    
-    # Soft delete
-    user.is_active = False
-    await user.save()
-    
-    return {"success": True, "message": "User deactivated"}
+    await delete_user_data(get_database(), user)
+
+    return {"success": True, "message": "User permanently deleted"}
+
+
+@router.post("/users/bulk-delete")
+async def bulk_delete_users(
+    body: UserBulkDeleteBody,
+    admin: User = Depends(get_admin_user),
+):
+    deleted_count = 0
+    skipped_users = []
+    for user_id in body.user_ids:
+        if not PydanticObjectId.is_valid(user_id):
+            skipped_users.append({"id": user_id, "reason": "Invalid user ID"})
+            continue
+        user = await User.get(PydanticObjectId(user_id))
+        if not user:
+            skipped_users.append({"id": user_id, "reason": "User not found"})
+            continue
+        if user.role == "admin":
+            skipped_users.append({"id": user_id, "reason": "Admin users cannot be deleted"})
+            continue
+        await delete_user_data(get_database(), user)
+        deleted_count += 1
+    return {
+        "success": True,
+        "deleted_count": deleted_count,
+        "skipped_users": skipped_users,
+        "message": f"Deleted {deleted_count} users",
+    }
 
 
 # ── Post Management ───────────────────────────────────────────────────────────
@@ -227,8 +307,8 @@ async def get_all_posts(
         author = await User.get(post.author_id)
         result.append({
             "id": str(post.id),
-            "content": post.content,
-            "media": post.media,
+            "content": post.caption,
+            "media": [media.model_dump() for media in post.media],
             "likes_count": post.likes_count,
             "comments_count": post.comments_count,
             "created_at": post.created_at.isoformat(),
@@ -328,3 +408,85 @@ async def delete_event(
     
     await event.delete()
     return {"success": True, "message": "Event deleted"}
+
+
+@router.get("/groups")
+async def get_all_groups(
+    admin: User = Depends(get_admin_user),
+    limit: int = Query(200, ge=1, le=500),
+):
+    database = get_database()
+    groups = await database.groups.find({}).sort("created_at", -1).to_list(length=limit)
+    return {
+        "success": True,
+        "groups": [
+            {
+                "_id": str(group["_id"]),
+                "id": str(group["_id"]),
+                "name": group.get("name", ""),
+                "slug": group.get("slug", ""),
+                "description": group.get("description", ""),
+                "is_official": bool(group.get("is_official", False)),
+                "is_community": bool(group.get("is_community", False)),
+                "is_active": group.get("is_active", True),
+                "member_count": group.get("members_count", len(group.get("members") or [])),
+                "total_points": group.get("total_points", 0),
+            }
+            for group in groups
+        ],
+    }
+
+
+@router.patch("/groups/{group_id}/toggle-active")
+async def toggle_group_active(
+    group_id: str,
+    admin: User = Depends(get_admin_user),
+):
+    if not ObjectId.is_valid(group_id):
+        raise HTTPException(404, "Group not found")
+
+    database = get_database()
+    group = await database.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(404, "Group not found")
+
+    is_active = not group.get("is_active", True)
+    await database.groups.update_one(
+        {"_id": group["_id"]},
+        {"$set": {"is_active": is_active}},
+    )
+    return {
+        "success": True,
+        "group": {
+            "id": str(group["_id"]),
+            "is_active": is_active,
+        },
+    }
+
+
+async def delete_group_data(database, group_ids: list[str]) -> int:
+    valid_ids = [ObjectId(group_id) for group_id in group_ids if ObjectId.is_valid(group_id)]
+    if not valid_ids:
+        return 0
+    string_ids = [str(group_id) for group_id in valid_ids]
+    for collection in ("group_members", "group_messages", "group_invitations"):
+        await database[collection].delete_many({
+            "$or": [{"group_id": {"$in": string_ids}},
+                    {"group_id": {"$in": valid_ids}}]
+        })
+    result = await database.groups.delete_many({"_id": {"$in": valid_ids}})
+    return result.deleted_count
+
+
+@router.post("/groups/bulk-delete")
+async def bulk_delete_groups(
+    body: GroupBulkDeleteBody,
+    admin: User = Depends(get_admin_user),
+):
+    database = get_database()
+    deleted_count = await delete_group_data(database, body.group_ids)
+    return {
+        "success": True,
+        "deleted_count": deleted_count,
+        "message": f"Deleted {deleted_count} groups",
+    }

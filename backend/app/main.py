@@ -20,6 +20,7 @@ from app.api.routes.social         import router as social_router
 from app.api.routes.events         import router as events_router
 from app.api.routes.notifications import router as notif_router
 from app.api.routes.admin          import router as admin_router
+from app.api.routes.groups         import router as groups_router
 from app.api.routes                import chat
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/15minutes"])
@@ -51,6 +52,8 @@ origins = [
     "https://impacthub-dnjr-a8uiow79p-tanishs-projects-de6a879e.vercel.app",
     "http://localhost:3000",
     "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
 ]
 
 app.add_middleware(
@@ -69,6 +72,8 @@ app.include_router(social_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 app.include_router(notif_router,  prefix="/api")
 app.include_router(admin_router,  prefix="/api")
+app.include_router(groups_router,  prefix="/api")
+app.include_router(chat.router, prefix="/api/chat")
 
 # FIX: Added prefix="/api" to match your frontend requests
 @app.get("/api/health", tags=["health"])

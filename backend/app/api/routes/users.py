@@ -1,42 +1,28 @@
-import os
 import json
 from typing import Optional, List
-
-from dotenv import load_dotenv
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel
 from beanie import PydanticObjectId
-from google import genai
 from google.genai import types
 
-from dotenv import load_dotenv
-
-from app.core.config import settings
+from app.core.ai import generate_content_with_fallback
 
 
 from app.models.user import User, AvatarEmbed
 from app.models.follow import Follow
 from app.core.security import get_current_user, get_optional_user
+from app.core.database import get_database
 from app.core import cloudinary as cld
 from app.api.routes.auth import user_dict
-
-# Load the variables from the .env file
-load_dotenv()
-
-
-load_dotenv()
 
 # prefix="/users" matches your main.py app.include_router(users_router, prefix="/api")
 # Resulting in: /api/users/...
 router = APIRouter(prefix="/users", tags=["users"])
 # --- GEMINI CONFIGURATION ---
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEYY")
-client = genai.Client(api_key=GEMINI_API_KEY)
-
 # FIX 1: Defined MODEL_NAME properly so /detect doesn't crash
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-3.5-flash-lite"
 
 # --- REGISTRY ---
 GARBAGE_REGISTRY = {
@@ -147,7 +133,7 @@ async def detect_garbage(
         contents.append(prompt)
         
         # FIX: Changed from undefined CURRENT_MODEL to MODEL_NAME
-        response = client.models.generate_content(
+        response = await generate_content_with_fallback(
             model=MODEL_NAME,
             contents=contents,
             config=types.GenerateContentConfig(
@@ -218,6 +204,27 @@ async def claim_points(request: ClaimRequest, current_user: User = Depends(get_c
     current_user.do_claim() 
     current_user.impact_score = original_score + pts
     await current_user.save()
+
+    database = get_database()
+    official_group = await database.groups.find_one({
+        "is_official": True,
+        "is_community": {"$ne": True},
+        "members": {"$in": [str(current_user.id), current_user.id]},
+        "is_active": {"$ne": False},
+    })
+    if official_group and pts > 0:
+        await database.group_members.update_one(
+            {
+                "group_id": str(official_group["_id"]),
+                "user_id": str(current_user.id),
+            },
+            {"$inc": {"contributed_points": pts}},
+            upsert=True,
+        )
+        await database.groups.update_one(
+            {"_id": official_group["_id"]},
+            {"$inc": {"total_points": pts}},
+        )
     
     return {
         "success": True,

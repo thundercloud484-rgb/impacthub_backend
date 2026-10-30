@@ -3,7 +3,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="relative z-[1] min-h-screen bg-transparent">
       <Navbar />
-      {children}
+      <main className="pt-14">{children}</main>
     </div>
   );
 }

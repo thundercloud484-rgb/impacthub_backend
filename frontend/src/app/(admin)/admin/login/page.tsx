@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminService } from "@/services/admin.service";
 import { Shield, AlertCircle } from "lucide-react";
@@ -12,6 +12,12 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    sessionStorage.removeItem("ci_admin_token");
+    localStorage.removeItem("ci_admin_token");
+    document.cookie = "ci_admin_token=; path=/; max-age=0";
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -19,10 +25,10 @@ export default function AdminLoginPage() {
 
     try {
       const { data } = await adminService.login(email, password);
-      localStorage.setItem("ci_admin_token", data.token);
+      sessionStorage.setItem("ci_admin_token", data.token);
       
       // Set cookie for middleware
-      document.cookie = `ci_admin_token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`;
+      document.cookie = `ci_admin_token=${data.token}; path=/; SameSite=Lax`;
       
       toast.success("Welcome back, Admin!");
       router.push("/admin");

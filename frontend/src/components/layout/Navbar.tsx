@@ -55,14 +55,14 @@ export default function Navbar() {
 
   return (
     <>
-      <nav className="fixed top-0 w-full z-50 h-14 bg-transparent border-transparent ">
+      <nav className="fixed top-0 w-full z-50 h-14 bg-white border-b border-slate-200 shadow-sm isolate">
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between gap-3">
           {/* ... Logo & Search ... */}
           <Link href="/" className="flex items-center gap-2 shrink-0 group">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-civic-500 to-civic-700 flex items-center justify-center shadow-green group-hover:scale-105 transition-transform">
               <img src="./new.jpeg" alt="" />
             </div>
-            <span className="font-display font-bold text-white text-lg hidden sm:block tracking-tight">CivicImpact</span>
+            <span className="font-display font-bold text-slate-700 text-lg hidden sm:block tracking-tight">CivicImpact</span>
           </Link>
 
           <form onSubmit={search} className="hidden md:flex flex-1 max-w-sm">
@@ -117,7 +117,7 @@ export default function Navbar() {
                       </Link>
 
                       {user?.role === "admin" && (
-                        <Link href="/admin" onClick={()=>setShowMenu(false)}
+                        <Link href="/admin/login" onClick={()=>setShowMenu(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-purple-600 hover:bg-purple-50 transition-colors">
                           <Settings className="h-4 w-4" /> Admin Panel
                         </Link>

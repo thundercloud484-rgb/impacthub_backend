@@ -150,9 +150,20 @@ export default function HomePage() {
   const hasOfficialGroup = officialMyGroups.length > 0;
 
   useEffect(() => {
-    if (isAuthenticated) loadPosts(1);
-    else setLoading(false);
-  }, [isAuthenticated, loadPosts]);
+    if (!isAuthenticated) {
+      setPosts([]);
+      setPage(1);
+      setHasMore(true);
+      setLoading(false);
+      return;
+    }
+
+    setPosts([]);
+    setPage(1);
+    setHasMore(true);
+    setLoading(true);
+    loadPosts(1);
+  }, [isAuthenticated, user?.id, loadPosts]);
 
   useEffect(() => {
     if (inView && hasMore && !loading && isAuthenticated) {
@@ -347,7 +358,7 @@ export default function HomePage() {
           </h2>
           <p className="text-slate-500 text-sm mt-1">Connect with verified municipal authorities and city officials.</p>
         </div>
-        {user?.role === "authority" && (
+        {(user?.role === "authority" || user?.category === "Authority") && (
           <button onClick={() => { setModalType("official"); setIsModalOpen(true); }}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-blue active:scale-95">
             <Plus className="h-5 w-5" /> Create Official Hub
@@ -469,7 +480,7 @@ export default function HomePage() {
           </h2>
           <p className="text-slate-500 text-sm mt-1">Large-scale networks containing multiple official groups.</p>
         </div>
-        {user?.role === "authority" && (
+        {(user?.role === "authority" || user?.category === "Authority") && (
           <button onClick={() => { setModalType("community"); setIsModalOpen(true); }}
             className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-all shadow-md active:scale-95">
             <Plus className="h-5 w-5" /> Create Community

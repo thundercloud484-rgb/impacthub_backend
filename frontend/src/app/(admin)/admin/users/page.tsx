@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { adminService } from "@/services/admin.service";
-import { Search, Ban, CheckCircle, Trash2, Shield, User, Key, TrendingUp, X } from "lucide-react";
+import { Search, Ban, CheckCircle, Trash2, Shield, User, Key, TrendingUp, X, Building2, Globe2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface UserData {
@@ -19,8 +20,26 @@ interface UserData {
   created_at: string;
 }
 
+interface GroupData {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  is_official?: boolean;
+  is_community?: boolean;
+  is_active?: boolean;
+  member_count?: number;
+  total_points?: number;
+}
+
+type AdminTab = "users" | "hubs" | "official" | "communities" | "authorities";
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserData[]>([]);
+  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<AdminTab>("users");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -35,19 +54,120 @@ export default function AdminUsersPage() {
   const [loadingLog, setLoadingLog] = useState(false);
 
   useEffect(() => {
-    loadUsers();
-  }, [page, search]);
+    if (activeTab === "users" || activeTab === "authorities") {
+      loadUsers();
+    }
+  }, [page, search, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "hubs" || activeTab === "official" || activeTab === "communities") {
+      loadGroups();
+    }
+  }, [activeTab]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const { data } = await adminService.getUsers(page, 20, search || undefined);
+      const role = activeTab === "authorities" ? "authority" : "user";
+      const { data } = await adminService.getUsers(page, 20, search || undefined, role);
       setUsers(data.users);
       setTotalPages(data.pagination.pages);
     } catch (err) {
       toast.error("Failed to load users");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadGroups = async () => {
+    setLoading(true);
+    try {
+      const { data } = await adminService.getGroups();
+      setGroups(
+        (data.groups || []).filter((group: GroupData) =>
+          activeTab === "communities"
+            ? group.is_community
+            : activeTab === "official"
+              ? group.is_official && !group.is_community
+              : !group.is_community && !group.is_official
+        )
+      );
+    } catch (err) {
+      toast.error("Failed to load groups");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectTab = (tab: AdminTab) => {
+    setActiveTab(tab);
+    setPage(1);
+    setSearch("");
+    setSelectedUsers(new Set());
+    setSelectedGroups(new Set());
+  };
+
+  const toggleSelected = (
+    id: string,
+    setter: Dispatch<SetStateAction<Set<string>>>
+  ) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteSelectedUsers = async () => {
+    if (selectedUsers.size === 0) return;
+    if (!confirm(`Permanently delete ${selectedUsers.size} selected users? This cannot be undone.`)) return;
+    try {
+      const { data } = await adminService.deleteUsers(Array.from(selectedUsers));
+      setUsers(users.filter((user) => !selectedUsers.has(user.id)));
+      setSelectedUsers(new Set());
+      toast.success(`${data.deleted_count} users deleted`);
+      if (data.skipped_users?.length) {
+        toast.error(`${data.skipped_users.length} users were skipped`);
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Failed to delete selected users");
+    }
+  };
+
+  const handleDeleteSelectedGroups = async () => {
+    if (selectedGroups.size === 0) return;
+    if (!confirm(`Permanently delete ${selectedGroups.size} selected groups? This cannot be undone.`)) return;
+    try {
+      const { data } = await adminService.deleteGroups(Array.from(selectedGroups));
+      setGroups(groups.filter((group) => !selectedGroups.has(group.id)));
+      setSelectedGroups(new Set());
+      toast.success(`${data.deleted_count} groups deleted`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Failed to delete selected groups");
+    }
+  };
+
+  const handleDeleteGroup = async (group: GroupData) => {
+    if (!confirm(`Permanently delete "${group.name}"? This removes its members and messages.`)) return;
+    try {
+      await adminService.deleteGroup(group.id);
+      setGroups(groups.filter((item) => item.id !== group.id));
+      toast.success("Group deleted");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Failed to delete group");
+    }
+  };
+
+  const handleToggleGroupActive = async (group: GroupData) => {
+    try {
+      const { data } = await adminService.toggleGroupActive(group.id);
+      setGroups(groups.map((item) =>
+        item.id === group.id ? { ...item, is_active: data.group.is_active } : item
+      ));
+      toast.success(data.group.is_active ? "Group activated" : "Group deactivated");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Failed to update group");
     }
   };
 
@@ -75,7 +195,7 @@ export default function AdminUsersPage() {
   };
 
   const handleDelete = async (userId: string, username: string) => {
-    if (!confirm(`Delete user @${username}? This will deactivate their account.`)) return;
+    if (!confirm(`Permanently delete user @${username}? This removes their account and content.`)) return;
 
     try {
       await adminService.deleteUser(userId);
@@ -156,6 +276,11 @@ export default function AdminUsersPage() {
     }
   };
 
+  const visibleGroups = groups.filter((group) => {
+    const query = search.trim().toLowerCase();
+    return !query || group.name.toLowerCase().includes(query) || group.slug.toLowerCase().includes(query);
+  });
+
   return (
     <div>
       <div className="mb-8">
@@ -164,6 +289,28 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-4">
+          {([
+            ["users", "Users", User],
+            ["hubs", "Citizen Hubs", Building2],
+            ["official", "Official Hubs", Shield],
+            ["communities", "Communities", Globe2],
+            ["authorities", "Authorities", Shield],
+          ] as const).map(([tab, label, Icon]) => (
+            <button
+              key={tab}
+              onClick={() => selectTab(tab)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                activeTab === tab
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="mb-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
@@ -174,7 +321,11 @@ export default function AdminUsersPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search by name, username, or email..."
+              placeholder={
+                activeTab === "hubs" || activeTab === "official" || activeTab === "communities"
+                  ? "Search groups..."
+                  : "Search by name, username, or email..."
+              }
               className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"
             />
           </div>
@@ -184,16 +335,117 @@ export default function AdminUsersPage() {
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : (activeTab === "hubs" || activeTab === "official" || activeTab === "communities") && visibleGroups.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-slate-500">No {activeTab === "communities" ? "communities" : "citizen hubs"} found</p>
+          </div>
+        ) : activeTab === "hubs" || activeTab === "official" || activeTab === "communities" ? (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={visibleGroups.length > 0 && visibleGroups.every((group) => selectedGroups.has(group.id))}
+                  onChange={() => {
+                    if (visibleGroups.every((group) => selectedGroups.has(group.id))) {
+                      setSelectedGroups(new Set());
+                    } else {
+                      setSelectedGroups(new Set(visibleGroups.map((group) => group.id)));
+                    }
+                  }}
+                />
+                Select all
+              </label>
+              <button
+                onClick={handleDeleteSelectedGroups}
+                disabled={selectedGroups.size === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm text-white bg-red-600 rounded-lg disabled:opacity-40"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete selected ({selectedGroups.size})
+              </button>
+            </div>
+            <div className="divide-y divide-slate-100">
+            {visibleGroups.map((group) => (
+              <div key={group.id} className="flex items-center justify-between gap-4 py-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedGroups.has(group.id)}
+                    onChange={() => toggleSelected(group.id, setSelectedGroups)}
+                  />
+                  <div>
+                  <p className="font-medium text-slate-900">{group.name}</p>
+                  <p className="text-sm text-slate-500">@{group.slug}</p>
+                  {group.description && <p className="text-sm text-slate-600 mt-1">{group.description}</p>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-slate-500">
+                    {group.member_count || 0} members · {group.total_points || 0} points
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    group.is_active === false
+                      ? "bg-red-100 text-red-700"
+                      : "bg-green-100 text-green-700"
+                  }`}>
+                    {group.is_active === false ? "Inactive" : "Active"}
+                  </span>
+                  <button
+                    onClick={() => handleToggleGroupActive(group)}
+                    className={group.is_active === false ? "text-green-600 hover:text-green-700" : "text-amber-600 hover:text-amber-700"}
+                    title={group.is_active === false ? "Activate group" : "Deactivate group"}
+                  >
+                    {group.is_active === false ? <CheckCircle className="h-5 w-5" /> : <Ban className="h-5 w-5" />}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteGroup(group)}
+                    className="text-red-600 hover:text-red-700"
+                    title="Delete group"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            </div>
+          </>
         ) : users.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-slate-500">No users found</p>
+            <p className="text-slate-500">No {activeTab === "authorities" ? "authorities" : "users"} found</p>
           </div>
         ) : (
           <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-slate-600">
+                {selectedUsers.size} selected
+              </span>
+              <button
+                onClick={handleDeleteSelectedUsers}
+                disabled={selectedUsers.size === 0}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm text-white bg-red-600 rounded-lg disabled:opacity-40"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete selected
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200">
+                    <th className="py-3 px-4">
+                      <input
+                        type="checkbox"
+                        checked={users.length > 0 && users.every((user) => selectedUsers.has(user.id))}
+                        onChange={() => {
+                          if (users.every((user) => selectedUsers.has(user.id))) {
+                            setSelectedUsers(new Set());
+                          } else {
+                            setSelectedUsers(new Set(users.map((user) => user.id)));
+                          }
+                        }}
+                      />
+                    </th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">User</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Category</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Stats</th>
@@ -206,6 +458,14 @@ export default function AdminUsersPage() {
                   {users.map((user) => (
                     <tr key={user.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="py-3 px-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.has(user.id)}
+                          onChange={() => toggleSelected(user.id, setSelectedUsers)}
+                          disabled={user.role === "admin"}
+                        />
+                      </td>
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <img
                             src={user.avatar.url || "/default-avatar.png"}
@@ -214,7 +474,8 @@ export default function AdminUsersPage() {
                           />
                           <div>
                             <p className="font-medium text-slate-900">{user.name}</p>
-                            <p className="text-sm text-slate-500">@{user.username}</p>
+                            <p className="text-sm text-slate-600">{user.email}</p>
+                            <p className="text-xs text-slate-400">@{user.username}</p>
                           </div>
                         </div>
                       </td>
@@ -275,7 +536,7 @@ export default function AdminUsersPage() {
                           <button
                             onClick={() => handleResetPassword(user.id, user.username)}
                             className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Reset Password"
+                            title="Change Password"
                           >
                             <Key className="h-4 w-4 text-blue-600" />
                           </button>

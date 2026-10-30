@@ -8,7 +8,7 @@ const adminApi = axios.create({
 // Request interceptor - attach admin token
 adminApi.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("ci_admin_token");
+    const token = sessionStorage.getItem("ci_admin_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -22,7 +22,7 @@ adminApi.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
       if (typeof window !== "undefined") {
-        localStorage.removeItem("ci_admin_token");
+        sessionStorage.removeItem("ci_admin_token");
         if (!window.location.pathname.includes("/admin/login")) {
           window.location.href = "/admin/login";
         }

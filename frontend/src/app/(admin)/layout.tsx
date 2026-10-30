@@ -11,7 +11,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("ci_admin_token");
+    const token = sessionStorage.getItem("ci_admin_token");
     if (!token && pathname !== "/admin/login") {
       router.push("/admin/login");
     } else {
@@ -21,7 +21,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [pathname, router]);
 
   const handleLogout = () => {
-    localStorage.removeItem("ci_admin_token");
+    sessionStorage.removeItem("ci_admin_token");
+    document.cookie = "ci_admin_token=; path=/; max-age=0";
     router.push("/admin/login");
   };
 

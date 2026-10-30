@@ -33,11 +33,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       // 2. Fix: Ensure /api prefix is included for Render
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+      const token = localStorage.getItem("ci_token");
       
-      const res = await fetch(`${apiUrl}/query`, {
+      const res = await fetch(`${apiUrl}/chat/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ 
           message: msg,
@@ -55,6 +57,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "Chat request failed");
+      }
 
       set((state) => {
         const updated = [...state.messages];

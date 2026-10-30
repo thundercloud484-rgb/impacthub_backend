@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Gemini AI
     GEMINI_API_KEY: str = ""
+    GEMINI_API_KEY_BACKUP: str = ""
 
     # EmailJS
     EMAILJS_SERVICE_ID:  str = ""

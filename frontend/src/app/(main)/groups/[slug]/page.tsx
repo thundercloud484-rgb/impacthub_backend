@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation"; 
 import { groupService, userService } from "@/services/index";
 import { useAuthStore } from "@/store/auth.store";
-import { Send, Users as UsersIcon, ChevronLeft, Hash, UserPlus, UserMinus, LogOut, X, Mail, Loader2, ShieldCheck, Lock, Bell, Check, Trophy, Globe, AtSign, ArrowRight, Trash2, Upload, RotateCcw } from "lucide-react"; 
+import { Send, Users as UsersIcon, ChevronLeft, Hash, UserPlus, UserMinus, LogOut, X, Mail, Loader2, ShieldCheck, Lock, Bell, Check, Trophy, Globe, AtSign, Trash2, Upload, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import Avatar from "@/components/ui/Avatar";
 import InviteHubModal from "@/components/groups/InviteHubModal";
@@ -44,12 +44,12 @@ export default function GroupPage() {
         const groupId = data.group.id || data.group._id;
         
         try {
-          const [mRes, msgRes] = await Promise.all([
+          const [mRes, msgRes] = await Promise.allSettled([
             groupService.getMembers(groupId),
             groupService.getMessages(groupId)
           ]);
-          setMembers(mRes.data.members || []);
-          setMessages(msgRes.data.messages || []);
+          if (mRes.status === "fulfilled") setMembers(mRes.value.data.members || []);
+          if (msgRes.status === "fulfilled") setMessages(msgRes.value.data.messages || []);
         } catch (error) {
           console.warn("User might not have access yet.");
         }
@@ -99,7 +99,15 @@ export default function GroupPage() {
     const tempText = inputText;
     setInputText("");
     try {
-      await groupService.sendMessage(group.id || group._id, tempText);
+      const { data } = await groupService.sendMessage(group.id || group._id, tempText);
+      if (data.success && data.message) {
+        setMessages((previousMessages) => {
+          if (previousMessages.some((message) => message._id === data.message._id)) {
+            return previousMessages;
+          }
+          return [...previousMessages, data.message];
+        });
+      }
     } catch (err) { console.error("Failed to send message:", err); }
   };
 
@@ -264,27 +272,23 @@ export default function GroupPage() {
       const { data } = await groupService.respondToCommunityInvite(group.id || group._id, communityId, accept);
       alert(data.message);
       setCommunityInvites(prev => prev.filter(c => c.id !== communityId));
-      if (accept) fetchGroupData();
+      if (accept) {
+        const community = communityInvites.find(c => c.id === communityId);
+        if (community?.slug) {
+          router.push(`/groups/${community.slug}`);
+        } else {
+          fetchGroupData();
+        }
+      }
     } catch (err: any) { alert(err.response?.data?.detail || "Failed to respond"); }
   };
 
   if (!group) return <div className="flex h-screen items-center justify-center animate-pulse text-slate-400">Loading Hub...</div>;
 
-  const isMember = members.some(m => String(m.id || m._id) === String(user?.id || user?._id));
-
-  // Block access to official hubs (non-community) if not a member
-  if (group.is_official && !group.is_community && !isMember) {
-    return (
-      <div className="flex h-[calc(100vh-100px)] items-center justify-center flex-col gap-5 bg-slate-50 rounded-3xl mt-4 border border-slate-200 shadow-inner">
-        <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center"><Lock className="w-10 h-10 text-slate-500" /></div>
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center justify-center gap-2">Private Official Hub <ShieldCheck className="w-6 h-6 text-blue-500" /></h2>
-          <p className="text-slate-500 mt-2 max-w-sm">This chat is restricted. You must be added directly by the Authority Admin.</p>
-        </div>
-        <Link href="/" className="mt-2 px-6 py-2.5 bg-civic-600 text-white font-bold rounded-xl shadow-sm">Return Home</Link>
-      </div>
-    );
-  }
+  const isMember = group.community_access || (
+    !group.is_community &&
+    members.some(m => String(m.id || m._id) === String(user?.id || user?._id))
+  );
 
   return (
     <div className="max-w-6xl mx-auto h-[calc(100vh-100px)] flex gap-4 p-4 mt-2 relative">
@@ -331,8 +335,7 @@ export default function GroupPage() {
             /* 🚀 RENDER POPULATED AFFILIATED HUBS */
             group.affiliated_hubs_data?.length > 0 ? (
               group.affiliated_hubs_data.map((hub: any) => (
-                <Link href={`/groups/${hub.slug}`} key={hub.id}>
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-blue-50/50 border border-blue-100 hover:bg-blue-100 transition-all mb-2 cursor-pointer">
+                <div key={hub.id} className="flex items-center justify-between p-3 rounded-2xl bg-blue-50/50 border border-blue-100 mb-2">
                     <div className="flex items-center gap-3">
                       <Avatar src={hub.avatar_url} name={hub.name} size="sm" className="h-8 w-8" />
                       <div className="flex flex-col">
@@ -340,9 +343,8 @@ export default function GroupPage() {
                         <span className="text-[9px] font-bold text-blue-600 uppercase flex items-center gap-0.5"><ShieldCheck className="w-2 h-2" /> Hub</span>
                       </div>
                     </div>
-                    <ArrowRight className="w-3 h-3 text-blue-400" />
+                    <span className="text-xs font-bold text-amber-600">{hub.total_points || 0} pts</span>
                   </div>
-                </Link>
               ))
             ) : <p className="text-[10px] text-slate-400 text-center py-10">No hubs affiliated yet.</p>
           ) : (
@@ -416,15 +418,13 @@ export default function GroupPage() {
                         /* Show affiliated hubs with their total_points */
                         group.affiliated_hubs_data?.length > 0 ? (
                           group.affiliated_hubs_data.map((hub: any) => (
-                            <Link href={`/groups/${hub.slug}`} key={hub.id}>
-                              <div className="flex justify-between items-center p-2 rounded-lg hover:bg-blue-50 transition-all cursor-pointer">
+                            <div key={hub.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-blue-50 transition-all">
                                 <div className="flex items-center gap-2">
                                   <Avatar src={hub.avatar_url} name={hub.name} size="sm" className="h-6 w-6" />
                                   <span className="text-sm font-semibold text-slate-700">{hub.name}</span>
                                 </div>
                                 <span className="text-sm font-bold text-amber-600">{hub.total_points || 0}</span>
-                              </div>
-                            </Link>
+                            </div>
                           ))
                         ) : (
                           <p className="text-xs text-slate-400 text-center py-4">No affiliated hubs yet</p>
@@ -478,12 +478,17 @@ export default function GroupPage() {
                 </button>
               </div>
             )}
-            {!isAdmin && <button onClick={handleLeaveGroup} className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all"><LogOut className="h-4 w-4" /> Leave</button>}
+            {!isAdmin && isMember && <button onClick={handleLeaveGroup} className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all"><LogOut className="h-4 w-4" /> Leave</button>}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {messages.length === 0 ? (
+          {!isMember ? (
+            <div className="h-full flex flex-col items-center justify-center text-center text-slate-400">
+              <Lock className="h-10 w-10 mb-3" />
+              <p className="font-semibold">Join this hub to view its chat.</p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center opacity-30 text-sm"><UsersIcon className="h-12 w-12 mb-2" /><p>No messages yet.</p></div>
           ) : (
             messages.map((m, i) => {
@@ -509,7 +514,7 @@ export default function GroupPage() {
           <div className="p-4 border-t bg-purple-50/50 text-center">
             <p className="text-sm text-purple-700 font-semibold flex items-center justify-center gap-2">
               <Globe className="h-4 w-4" />
-              View Only - Communities are for Authorities only
+              View Only - Community and affiliated Official Hub admins only
             </p>
           </div>
         ) : null}

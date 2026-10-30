@@ -12,6 +12,18 @@ export const adminService = {
   getUsers: (page = 1, limit = 20, search?: string, role?: string) =>
     adminApi.get("/admin/users", { params: { page, limit, search, role } }),
 
+  getGroups: (limit = 200) =>
+    adminApi.get("/admin/groups", { params: { limit } }),
+
+  deleteGroup: (groupId: string) =>
+    adminApi.post("/admin/groups/bulk-delete", { group_ids: [groupId] }),
+
+  deleteGroups: (groupIds: string[]) =>
+    adminApi.post("/admin/groups/bulk-delete", { group_ids: groupIds }),
+
+  toggleGroupActive: (groupId: string) =>
+    adminApi.patch(`/admin/groups/${groupId}/toggle-active`),
+
   toggleUserActive: (userId: string) =>
     adminApi.patch(`/admin/users/${userId}/toggle-active`),
 
@@ -23,6 +35,9 @@ export const adminService = {
 
   deleteUser: (userId: string) =>
     adminApi.delete(`/admin/users/${userId}`),
+
+  deleteUsers: (userIds: string[]) =>
+    adminApi.post("/admin/users/bulk-delete", { user_ids: userIds }),
 
   // User Points Management
   updateUserPoints: (userId: string, points: number, action: string = "admin_adjustment") =>

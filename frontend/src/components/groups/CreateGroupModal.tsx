@@ -52,8 +52,8 @@ export default function CreateGroupModal({ isOpen, onClose, onSuccess, currentUs
       onSuccess(); 
       onClose();   
       setName(""); setSlug(""); setDescription(""); setSelectedIds([]);
-    } catch (err) {
-      alert(`Error creating ${isCommunityGroup ? 'community' : isOfficialGroup ? 'official hub' : 'group'}. Make sure the handle is unique!`);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || `Error creating ${isCommunityGroup ? 'community' : isOfficialGroup ? 'official hub' : 'group'}.`);
     } finally {
       setLoading(false);
     }

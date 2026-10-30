@@ -17,6 +17,15 @@ class RegisterBody(BaseModel):
     email:    EmailStr
     password: str
 
+
+class AuthorityRegisterBody(RegisterBody):
+    designation: str
+    organization: str
+    city: str
+    state: str
+    proof_url: str = ""
+
+
 class LoginBody(BaseModel):
     email:    EmailStr
     password: str
@@ -70,6 +79,33 @@ async def register(body: RegisterBody):
         field = "Email" if existing.email == body.email.lower() else "Username"
         raise HTTPException(409, f"{field} already in use")
     user = User(name=body.name, username=body.username.lower(), email=body.email.lower())
+    user.set_password(body.password)
+    await user.insert()
+    return {"success": True, "token": create_access_token(str(user.id)), "user": user_dict(user)}
+
+
+@router.post("/register/authority", status_code=201)
+async def register_authority(body: AuthorityRegisterBody):
+    if len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if not re.match(r"^[a-z0-9_.]{3,30}$", body.username.lower()):
+        raise HTTPException(400, "Username: 3-30 chars, lowercase letters/numbers/_ only")
+
+    existing = await User.find_one(
+        Or(User.email == body.email.lower(), User.username == body.username.lower())
+    )
+    if existing:
+        field = "Email" if existing.email == body.email.lower() else "Username"
+        raise HTTPException(409, f"{field} already in use")
+
+    user = User(
+        name=body.name.strip(),
+        username=body.username.lower(),
+        email=body.email.lower(),
+        category="Authority",
+        location=f"{body.city.strip()}, {body.state.strip()}",
+        bio=f"{body.designation.strip()} at {body.organization.strip()}",
+    )
     user.set_password(body.password)
     await user.insert()
     return {"success": True, "token": create_access_token(str(user.id)), "user": user_dict(user)}
@@ -180,4 +216,3 @@ async def reset_password(body: ResetPasswordBody):
     user.reset_token_expires = None
     await user.save()
     return {"success": True, "message": "Password has been reset successfully"}
-

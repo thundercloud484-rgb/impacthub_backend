@@ -72,12 +72,6 @@ async def feed(page: int = 1, limit: int = 12, me: User = Depends(get_current_us
     skip    = (page - 1) * limit
     posts   = await Post.find({"author_id": {"$in": ids}, "is_archived": False}).sort(-Post.created_at).skip(skip).limit(limit).to_list()
 
-    if len(posts) < limit:
-        from datetime import datetime, timedelta
-        cutoff   = datetime.utcnow() - timedelta(days=7)
-        trending = await Post.find({"author_id": {"$nin": ids}, "is_archived": False, "created_at": {"$gte": cutoff}}).sort(-Post.likes_count).limit(limit - len(posts)).to_list()
-        posts    = posts + trending
-
     enriched = [await enrich(p, me) for p in posts]
     return {"success": True, "posts": enriched, "pagination": {"page": page, "limit": limit, "hasMore": len(posts) == limit}}
 
