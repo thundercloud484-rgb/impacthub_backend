@@ -40,9 +40,9 @@ export default function HeroText({ slides, activeIndex }: Props) {
   }, [activeIndex]);
 
   return (
-    <div
+   <div
       ref={containerRef}
-      className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+      className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none pt-14"
     >
       {slides.map((slide, i) => (
         <div
