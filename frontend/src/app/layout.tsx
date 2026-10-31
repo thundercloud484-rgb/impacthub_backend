@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, Playfair_Display } from "next/font/google";
+import { Plus_Jakarta_Sans, Fraunces } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import AuthProvider from "@/components/providers/AuthProvider";
 import ChatBot from "@/components/chat/ChatBot";
@@ -7,7 +7,7 @@ import InstallPWA from "@/components/providers/InstallPWA";
 import "./globals.css";
 
 const jakarta  = Plus_Jakarta_Sans({ variable: "--font-sans",    subsets: ["latin"], weight: ["400","500","600","700","800"] });
-const playfair = Playfair_Display({ variable: "--font-display", subsets: ["latin"], weight: ["400","600","700"] });
+const fraunces = Fraunces({ variable: "--font-display", subsets: ["latin"], weight: ["400","600","700"], style: ["normal", "italic"] });
 
 export const metadata: Metadata = {
   title: { default: "CivicImpact", template: "%s | CivicImpact" },
@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="permissions" content="camera" />
       
       </head>
-      <body className={`${jakarta.variable} ${playfair.variable} antialiased`}>
+      <body className={`${jakarta.variable} ${fraunces.variable} antialiased`}>
         <AuthProvider>
           {children}
           <ChatBot />
