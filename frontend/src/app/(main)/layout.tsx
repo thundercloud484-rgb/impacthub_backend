@@ -1,7 +1,7 @@
 import Navbar from "@/components/layout/Navbar";
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative z-[1] min-h-screen bg-transparent">
+    <div className="relative z-[1] min-h-screen bg-[#F5F8F7]">
       <Navbar />
       <main className="pt-14">{children}</main>
     </div>
