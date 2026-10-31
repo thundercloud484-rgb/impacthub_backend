@@ -570,7 +570,7 @@ export default function HomePage() {
 
 function Landing() {
   return (
-    <div className="bg-black min-h-screen overflow-x-hidden">
+    <div className="-mt-14 bg-black min-h-screen overflow-x-hidden">
       <Hero />
       <ModelSection />
     </div>
